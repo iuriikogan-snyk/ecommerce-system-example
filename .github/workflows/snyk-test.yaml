@@ -1,0 +1,57 @@
+name: Snyk SCA, Code, IaC and Container CLI monitor example
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  SNYK_API: https://app.eu.snyk.io/api
+  IMAGE_NAME: nodejs-goof
+  
+jobs:
+  build:
+    name: Test and build
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [16.x, 18.x]
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v2
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Setup Snyk + snyk-to-html # For information about the required commands for generating an HTML report see https://github.com/snyk/snyk-to-html
+        run: |
+          npm install snyk -g
+          npm install snyk-filter -g
+          npm install snyk-to-html -g
+          snyk auth ${{ secrets.SNYK_TOKEN }}
+
+      - name: Snyk Open Source
+        run: snyk test
+        # run: snyk monitor --org=XXX ---project-name=XXX - Use snyk monitor command to upload the results to the UI
+        continue-on-error: true
+
+      - name: Snyk Code
+        run: snyk code test --report --project-name=XXX
+        # snyk code test --report --project-name=XXX
+        continue-on-error: true
+
+      - name: Snyk Container
+        run: |
+          docker build . -t ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
+          snyk container test ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }} --file=Dockerfile --platform=linux/amd64
+        # Rename your image, for uploading directly to your snyk org please use the command "snyk container monitor $container_name/$tag --org=$ORG_ID"
+        continue-on-error: true
+      - name: Snyk IaC
+        run: snyk iac test
+        continue-on-error: true
